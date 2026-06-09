@@ -1,0 +1,16 @@
+nom_salle,capacite,est_labo
+A502,350,False
+A1001,400,False
+A301,200,False
+A302,150,False
+B101,100,False
+B102,80,False
+B103,60,False
+C201,120,False
+C202,90,False
+LAB_INFO_1,40,True
+LAB_INFO_2,35,True
+LAB_ELEC,30,True
+LAB_CHIMIE,25,True
+R108,100,False
+R109,80,False

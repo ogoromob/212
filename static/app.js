@@ -1,0 +1,544 @@
+/**
+ * Application Frontend - Planification d'Examens
+ * Gere l'interaction avec l'API Flask
+ */
+
+// ============================================================
+// VARIABLES GLOBALES
+// ============================================================
+let etat = {
+    donneesChargees: false,
+    grapheConstruit: false,
+    colorationFaite: false,
+    planningGenere: false
+};
+
+// ============================================================
+// NAVIGATION
+// ============================================================
+function showTab(tabName) {
+    // Masquer tous les contenus
+    document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
+    
+    // Afficher le contenu selectionne
+    document.getElementById('tab-' + tabName).classList.add('active');
+    event.target.classList.add('active');
+}
+
+// ============================================================
+// MISE A JOUR DU STATUS
+// ============================================================
+function updateStatus() {
+    const donnees = document.getElementById('status-donnees');
+    const graphe = document.getElementById('status-graphe');
+    const coloration = document.getElementById('status-coloration');
+    const planning = document.getElementById('status-planning');
+    
+    const textDonnees = document.getElementById('text-donnees');
+    const textGraphe = document.getElementById('text-graphe');
+    const textColoration = document.getElementById('text-coloration');
+    const textPlanning = document.getElementById('text-planning');
+    
+    if (etat.donneesChargees) {
+        donnees.classList.add('ready');
+        textDonnees.textContent = 'Chargees';
+    }
+    if (etat.grapheConstruit) {
+        graphe.classList.add('ready');
+        textGraphe.textContent = 'Construit';
+    }
+    if (etat.colorationFaite) {
+        coloration.classList.add('ready');
+        textColoration.textContent = 'Effectuee';
+    }
+    if (etat.planningGenere) {
+        planning.classList.add('ready');
+        textPlanning.textContent = 'Genere';
+    }
+}
+
+// ============================================================
+// CHARGEMENT DES DONNEES
+// ============================================================
+async function chargerDonneesParDefaut() {
+    try {
+        const response = await fetch('/api/charger-donnees', {
+            method: 'POST',
+            body: new FormData()
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            etat.donneesChargees = true;
+            updateStatus();
+            
+            document.getElementById('info-donnees').style.display = 'block';
+            document.getElementById('btn-construire-graphe').disabled = false;
+            
+            // Afficher les stats
+            afficherStatsDonnees(data.stats);
+            
+            // Charger les listes
+            chargerListes();
+            
+            alert('Donnees chargees avec succes!');
+        } else {
+            alert('Erreur: ' + data.error);
+        }
+    } catch (error) {
+        alert('Erreur de connexion: ' + error.message);
+    }
+}
+
+async function chargerFichiersUpload() {
+    const formData = new FormData();
+    
+    const fileUE = document.getElementById('file-ue').files[0];
+    const fileInsc = document.getElementById('file-insc').files[0];
+    const fileSalles = document.getElementById('file-salles').files[0];
+    
+    if (!fileUE) {
+        alert('Veuillez selectionner au moins le fichier UEs.csv');
+        return;
+    }
+    
+    formData.append('fichier_ue', fileUE);
+    if (fileInsc) formData.append('fichier_inscriptions', fileInsc);
+    if (fileSalles) formData.append('fichier_salles', fileSalles);
+    
+    try {
+        const response = await fetch('/api/charger-donnees', {
+            method: 'POST',
+            body: formData
+        });
+        const data = await response.json();
+        
+        if (data.success) {
+            etat.donneesChargees = true;
+            updateStatus();
+            
+            document.getElementById('info-donnees').style.display = 'block';
+            document.getElementById('btn-construire-graphe').disabled = false;
+            
+            afficherStatsDonnees(data.stats);
+            chargerListes();
+            
+            alert('Fichiers importes avec succes!');
+        } else {
+            alert('Erreur: ' + data.error);
+        }
+    } catch (error) {
+        alert('Erreur de connexion: ' + error.message);
+    }
+}
+
+function afficherStatsDonnees(stats) {
+    const container = document.getElementById('stats-donnees');
+    container.innerHTML = `
+        <div class="stat-card">
+            <div class="stat-value">${stats.nb_sommets}</div>
+            <div class="stat-label">UEs</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${stats.nb_aretes}</div>
+            <div class="stat-label">Conflits</div>
+        </div>
+    `;
+}
+
+async function chargerListes() {
+    try {
+        // UEs
+        const respUE = await fetch('/api/ues');
+        const ues = await respUE.json();
+        
+        let htmlUE = '<table><thead><tr><th>Code</th><th>Nom</th><th>Effectif</th><th>Surveillant</th><th>Filiere</th></tr></thead><tbody>';
+        ues.forEach(ue => {
+            htmlUE += `<tr>
+                <td>${ue.code}</td>
+                <td>${ue.nom}</td>
+                <td>${ue.nb_inscrits}</td>
+                <td>${ue.surveillant}</td>
+                <td>${ue.filiere}</td>
+            </tr>`;
+        });
+        htmlUE += '</tbody></table>';
+        document.getElementById('liste-ues').innerHTML = htmlUE;
+        
+        // Salles
+        const respSalles = await fetch('/api/salles');
+        const salles = await respSalles.json();
+        
+        let htmlSalles = '<table><thead><tr><th>Nom</th><th>Capacite</th><th>Labo</th></tr></thead><tbody>';
+        salles.forEach(salle => {
+            htmlSalles += `<tr>
+                <td>${salle.nom}</td>
+                <td>${salle.capacite}</td>
+                <td>${salle.est_labo ? 'Oui' : 'Non'}</td>
+            </tr>`;
+        });
+        htmlSalles += '</tbody></table>';
+        document.getElementById('liste-salles').innerHTML = htmlSalles;
+        
+    } catch (error) {
+        console.error('Erreur chargement listes:', error);
+    }
+}
+
+// ============================================================
+// GRAPHE
+// ============================================================
+async function construireGraphe() {
+    document.getElementById('loading-graphe').classList.add('active');
+    
+    try {
+        // Les donnees sont deja chargees, le graphe est construit cote serveur
+        // On recupere juste les stats et l'image
+        
+        // Stats
+        const respStats = await fetch('/api/graphe/stats');
+        const stats = await respStats.json();
+        
+        afficherStatsGraphe(stats);
+        
+        // Image
+        const imgGraphe = document.getElementById('img-graphe');
+        imgGraphe.src = '/api/graphe/visualiser?' + new Date().getTime();
+        
+        // Matrice
+        await chargerMatriceAdj();
+        
+        // Liste adjacence
+        await chargerListeAdj();
+        
+        etat.grapheConstruit = true;
+        updateStatus();
+        
+        document.getElementById('resultat-graphe').style.display = 'block';
+        
+        // Activer les boutons de coloration
+        document.getElementById('btn-welsh').disabled = false;
+        document.getElementById('btn-dsatur').disabled = false;
+        document.getElementById('btn-comparer').disabled = false;
+        
+    } catch (error) {
+        alert('Erreur: ' + error.message);
+    } finally {
+        document.getElementById('loading-graphe').classList.remove('active');
+    }
+}
+
+function afficherStatsGraphe(stats) {
+    const container = document.getElementById('stats-graphe');
+    container.innerHTML = `
+        <div class="stat-card">
+            <div class="stat-value">${stats.nb_sommets}</div>
+            <div class="stat-label">Sommets</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${stats.nb_aretes}</div>
+            <div class="stat-label">Aretes</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${stats.degre_max}</div>
+            <div class="stat-label">Degre Max</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${stats.degre_min}</div>
+            <div class="stat-label">Degre Min</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${stats.degre_moyen}</div>
+            <div class="stat-label">Degre Moyen</div>
+        </div>
+    `;
+}
+
+async function chargerMatriceAdj() {
+    try {
+        const response = await fetch('/api/graphe/matrice');
+        const data = await response.json();
+        
+        let html = '<table><thead><tr><th></th>';
+        data.codes.forEach(code => html += `<th>${code}</th>`);
+        html += '</tr></thead><tbody>';
+        
+        data.matrice.forEach((row, i) => {
+            html += `<tr><th>${data.codes[i]}</th>`;
+            row.forEach(val => {
+                html += `<td style="text-align:center;${val ? 'background:#ffc107;font-weight:bold;' : ''}">${val}</td>`;
+            });
+            html += '</tr>';
+        });
+        html += '</tbody></table>';
+        
+        document.getElementById('matrice-adj').innerHTML = html;
+    } catch (error) {
+        console.error('Erreur matrice:', error);
+    }
+}
+
+async function chargerListeAdj() {
+    try {
+        const response = await fetch('/api/graphe/liste-adjacence');
+        const data = await response.json();
+        
+        let html = '<table><thead><tr><th>Sommet</th><th>Voisins</th></tr></thead><tbody>';
+        for (const [code, voisins] of Object.entries(data)) {
+            html += `<tr><td><strong>${code}</strong></td><td>${voisins.join(', ')}</td></tr>`;
+        }
+        html += '</tbody></table>';
+        
+        document.getElementById('liste-adj').innerHTML = html;
+    } catch (error) {
+        console.error('Erreur liste adj:', error);
+    }
+}
+
+// ============================================================
+// COLORATION
+// ============================================================
+async function lancerWelshPowell() {
+    await lancerColoration('welsh-powell');
+}
+
+async function lancerDSATUR() {
+    await lancerColoration('dsatur');
+}
+
+async function lancerColoration(algorithme) {
+    document.getElementById('loading-coloration').classList.add('active');
+    document.getElementById('resultat-coloration').style.display = 'none';
+    
+    try {
+        const respecterFiliere = document.getElementById('check-filiere').checked;
+        
+        const response = await fetch(`/api/coloration/${algorithme}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ respecter_filiere: respecterFiliere })
+        });
+        
+        const data = await response.json();
+        
+        if (data.error) {
+            alert('Erreur: ' + data.error);
+            return;
+        }
+        
+        // Afficher les resultats
+        afficherResultatColoration(data);
+        
+        etat.colorationFaite = true;
+        updateStatus();
+        
+        // Activer le bouton de planning
+        document.getElementById('btn-generer-planning').disabled = false;
+        
+        // Rafraichir l'image du graphe colore
+        document.getElementById('img-graphe').src = '/api/graphe/visualiser?' + new Date().getTime();
+        
+    } catch (error) {
+        alert('Erreur: ' + error.message);
+    } finally {
+        document.getElementById('loading-coloration').classList.remove('active');
+    }
+}
+
+function afficherResultatColoration(data) {
+    document.getElementById('resultat-coloration').style.display = 'block';
+    
+    const container = document.getElementById('stats-coloration');
+    container.innerHTML = `
+        <div class="stat-card">
+            <div class="stat-value">${data.algorithme}</div>
+            <div class="stat-label">Algorithme</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${data.nb_creneaux}</div>
+            <div class="stat-label">Creneaux Utilises</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-value">${data.temps_execution}s</div>
+            <div class="stat-label">Temps d'Execution</div>
+        </div>
+    `;
+    
+    // Details des creneaux
+    let htmlDetails = '<h4>Repartition par Creneau</h4><table><thead><tr><th>Creneau</th><th>UEs</th><th>Nombre</th></tr></thead><tbody>';
+    
+    const creneaux = {};
+    for (const [code, creneau] of Object.entries(data.couleurs)) {
+        if (!creneaux[creneau]) creneaux[creneau] = [];
+        creneaux[creneau].push(code);
+    }
+    
+    for (const [creneau, ues] of Object.entries(creneaux)) {
+        htmlDetails += `<tr><td><strong>Creneau ${creneau}</strong></td><td>${ues.join(', ')}</td><td>${ues.length}</td></tr>`;
+    }
+    htmlDetails += '</tbody></table>';
+    
+    document.getElementById('details-coloration').innerHTML = htmlDetails;
+}
+
+async function comparerAlgorithmes() {
+    document.getElementById('loading-coloration').classList.add('active');
+    document.getElementById('resultat-comparaison').style.display = 'none';
+    
+    try {
+        const response = await fetch('/api/coloration/comparer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        
+        const data = await response.json();
+        
+        document.getElementById('resultat-comparaison').style.display = 'block';
+        
+        const comp = data.comparaison;
+        const wpWinner = comp.gagnant_creneaux === 'Welsh-Powell';
+        const dsWinner = comp.gagnant_creneaux === 'DSATUR';
+        
+        document.getElementById('comparaison-content').innerHTML = `
+            <div class="algo-card ${wpWinner ? 'winner' : ''}">
+                <h4>Welsh-Powell ${wpWinner ? '&#127942;' : ''}</h4>
+                <p><strong>Creneaux:</strong> ${comp.nb_creneaux_wp}</p>
+                <p><strong>Temps:</strong> ${comp.temps_wp}s</p>
+                <p>${wpWinner ? 'Meilleur en nombre de creneaux!' : ''}</p>
+            </div>
+            <div class="algo-card ${dsWinner ? 'winner' : ''}">
+                <h4>DSATUR ${dsWinner ? '&#127942;' : ''}</h4>
+                <p><strong>Creneaux:</strong> ${comp.nb_creneaux_ds}</p>
+                <p><strong>Temps:</strong> ${comp.temps_ds}s</p>
+                <p>${dsWinner ? 'Meilleur en nombre de creneaux!' : ''}</p>
+            </div>
+        `;
+        
+    } catch (error) {
+        alert('Erreur: ' + error.message);
+    } finally {
+        document.getElementById('loading-coloration').classList.remove('active');
+    }
+}
+
+// ============================================================
+// PLANNING
+// ============================================================
+async function genererPlanning() {
+    document.getElementById('loading-planning').classList.add('active');
+    document.getElementById('resultat-planning').style.display = 'none';
+    
+    try {
+        const response = await fetch('/api/planning/generer', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
+        
+        const data = await response.json();
+        
+        if (data.success) {
+            etat.planningGenere = true;
+            updateStatus();
+            
+            // Afficher le rapport d'audit
+            afficherRapportAudit(data.rapport);
+            
+            // Afficher le tableau de planning
+            afficherTableauPlanning(data.planning);
+            
+            document.getElementById('resultat-planning').style.display = 'block';
+        } else {
+            alert('Erreur: ' + data.error);
+        }
+        
+    } catch (error) {
+        alert('Erreur: ' + error.message);
+    } finally {
+        document.getElementById('loading-planning').classList.remove('active');
+    }
+}
+
+function afficherRapportAudit(rapport) {
+    const container = document.getElementById('rapport-audit');
+    
+    let html = '';
+    
+    if (rapport.contraintes_respectees) {
+        html += '<div class="alert alert-success"><strong>&#10004; Toutes les contraintes obligatoires sont respectees!</strong></div>';
+    } else {
+        html += '<div class="alert alert-danger"><strong>&#10008; Certaines contraintes ne sont pas respectees!</strong></div>';
+    }
+    
+    if (rapport.erreurs.length > 0) {
+        html += '<h4>Erreurs (' + rapport.erreurs.length + ')</h4><ul>';
+        rapport.erreurs.forEach(err => html += `<li style="color: #721c24;">${err}</li>`);
+        html += '</ul>';
+    }
+    
+    if (rapport.avertissements.length > 0) {
+        html += '<h4>Avertissements (' + rapport.avertissements.length + ')</h4><ul>';
+        rapport.avertissements.forEach(warn => html += `<li style="color: #856404;">${warn}</li>`);
+        html += '</ul>';
+    }
+    
+    html += '<div class="stats-grid">';
+    html += `<div class="stat-card"><div class="stat-value">${rapport.stats.total_ues}</div><div class="stat-label">Total UEs</div></div>`;
+    html += `<div class="stat-card"><div class="stat-value">${rapport.stats.ues_affectees}</div><div class="stat-label">UEs Affectees</div></div>`;
+    html += `<div class="stat-card"><div class="stat-value">${rapport.stats.nb_creneaux}</div><div class="stat-label">Creneaux</div></div>`;
+    html += `<div class="stat-card"><div class="stat-value">${rapport.stats.nb_erreurs}</div><div class="stat-label">Erreurs</div></div>`;
+    html += '</div>';
+    
+    container.innerHTML = html;
+}
+
+function afficherTableauPlanning(planning) {
+    const thead = document.querySelector('#table-planning thead');
+    const tbody = document.querySelector('#table-planning tbody');
+    
+    // Regrouper par creneau
+    const parCreneau = {};
+    planning.forEach(item => {
+        if (!parCreneau[item.creneau]) parCreneau[item.creneau] = [];
+        parCreneau[item.creneau].push(item);
+    });
+    
+    // En-tete
+    thead.innerHTML = '<tr><th>Creneau</th><th>Salle</th><th>Code UE</th><th>Nom UE</th><th>Filiere</th><th>Effectif</th><th>Surveillant</th></tr>';
+    
+    // Corps
+    let html = '';
+    for (const [creneau, items] of Object.entries(parCreneau)) {
+        items.forEach((item, index) => {
+            html += `<tr>
+                ${index === 0 ? `<td rowspan="${items.length}"><strong>Creneau ${creneau}</strong></td>` : ''}
+                <td>${item.salle}</td>
+                <td>${item.code_ue}</td>
+                <td>${item.nom_ue}</td>
+                <td>${item.filiere}</td>
+                <td>${item.effectif}</td>
+                <td>${item.surveillant}</td>
+            </tr>`;
+        });
+    }
+    tbody.innerHTML = html;
+}
+
+// ============================================================
+// INITIALISATION
+// ============================================================
+document.addEventListener('DOMContentLoaded', function() {
+    // Verifier l'etat initial
+    fetch('/api/etat')
+        .then(r => r.json())
+        .then(data => {
+            if (data.donnees_chargees) {
+                etat.donneesChargees = true;
+                document.getElementById('btn-construire-graphe').disabled = false;
+                chargerListes();
+            }
+            updateStatus();
+        });
+});

@@ -1,0 +1,25 @@
+code_ue,nom,nb_inscrits,surveillant,filiere,besoin_labo
+INF201,Algorithmique et Programmation,45,M_Dupont,INFORMATIQUE,False
+INF202,Base de Donnees,50,M_Dupont,INFORMATIQUE,False
+INF203,Reseaux Informatiques,35,M_Martin,INFORMATIQUE,False
+INF204,Programmation Web,40,M_Martin,INFORMATIQUE,False
+INF205,Systemes d'Exploitation,30,M_Bernard,INFORMATIQUE,False
+INF206,Intelligence Artificielle,25,M_Bernard,INFORMATIQUE,False
+MAT201,Analyse Mathematique,60,M_Durand,MATHEMATIQUES,False
+MAT202,Algebre Lineaire,55,M_Durand,MATHEMATIQUES,False
+MAT203,Probabilites et Statistiques,45,M_Leroy,MATHEMATIQUES,False
+MAT204,Recherche Operationnelle,35,M_Leroy,MATHEMATIQUES,False
+PHY201,Mecanique du Point,40,M_Morel,PHYSIQUE,False
+PHY202,Electromagnetisme,35,M_Morel,PHYSIQUE,False
+PHY203,Optique,30,M_Petit,PHYSIQUE,False
+PHY204,Thermodynamique,25,M_Petit,PHYSIQUE,False
+CHM201,Chimie Organique,30,M_Richard,CHIMIE,False
+CHM202,Chimie Inorganique,25,M_Richard,CHIMIE,False
+CHM203,Chimie Analytique,20,M_Simon,CHIMIE,False
+BOA201,Comptabilite Generale,50,M_Dubois,COMPTABILITE,False
+BOA202,Analyse Financiere,45,M_Dubois,COMPTABILITE,False
+BOA203,Gestion des Entreprises,40,M_Fontaine,COMPTABILITE,False
+BOA204,Marketing,35,M_Fontaine,COMPTABILITE,False
+INF301,Programmation Orientee Objet,35,M_Dupont,INFORMATIQUE,True
+INF302,Bases de Donnees Avancees,30,M_Dupont,INFORMATIQUE,True
+INF303,Developpement Web Avance,25,M_Martin,INFORMATIQUE,True
