@@ -13,7 +13,7 @@ from werkzeug.utils import secure_filename
 
 from graphe import GrapheConflit
 from coloration import SolveurColoration
-from affectation import GenerateurPlanning
+from affectation import GenerateurPlanning, creneau_to_horaire
 
 app = Flask(__name__)
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -25,7 +25,8 @@ donnees_session = {
     'salles': [],
     'solveur': None,
     'planning': None,
-    'resultats': {}
+    'resultats': {},
+    'interdictions': []
 }
 
 # ============================================================
@@ -82,8 +83,9 @@ def charger_donnees():
             # Mode donnees par defaut
             salles = graphe.charger_donnees('data/ues.csv', 'data/inscriptions.csv', 'data/salles.csv')
         
-        # Construire le graphe
-        stats = graphe.construire_graphe()
+        # Construire le graphe avec les interdictions explicites
+        interdictions = donnees_session.get('interdictions', [])
+        stats = graphe.construire_graphe(interdictions=interdictions)
         
         # Stocker en session
         donnees_session['graphe'] = graphe
@@ -106,6 +108,50 @@ def charger_donnees_par_defaut():
     return charger_donnees()
 
 # ============================================================
+# API - Interdictions explicites
+# ============================================================
+
+@app.route('/api/interdictions', methods=['GET', 'POST'])
+def gerer_interdictions():
+    """GET: liste les interdictions, POST: ajoute/supprime des interdictions"""
+    if request.method == 'GET':
+        return jsonify({
+            'interdictions': donnees_session.get('interdictions', [])
+        })
+    
+    if request.method == 'POST':
+        data = request.get_json() or {}
+        action = data.get('action', 'add')
+        
+        if action == 'add':
+            paire = data.get('paire')
+            if paire and len(paire) == 2:
+                donnees_session['interdictions'].append(paire)
+                # Reconstruire le graphe si les donnees sont chargees
+                if donnees_session['graphe']:
+                    donnees_session['graphe'].construire_graphe(interdictions=donnees_session['interdictions'])
+                return jsonify({'success': True, 'interdictions': donnees_session['interdictions']})
+        
+        elif action == 'remove':
+            paire = data.get('paire')
+            if paire and len(paire) == 2:
+                donnees_session['interdictions'] = [
+                    i for i in donnees_session['interdictions']
+                    if not (i[0] == paire[0] and i[1] == paire[1])
+                ]
+                if donnees_session['graphe']:
+                    donnees_session['graphe'].construire_graphe(interdictions=donnees_session['interdictions'])
+                return jsonify({'success': True, 'interdictions': donnees_session['interdictions']})
+        
+        elif action == 'clear':
+            donnees_session['interdictions'] = []
+            if donnees_session['graphe']:
+                donnees_session['graphe'].construire_graphe(interdictions=[])
+            return jsonify({'success': True, 'interdictions': []})
+        
+        return jsonify({'success': False, 'error': 'Action invalide'}), 400
+
+# ============================================================
 # API - Visualisation du graphe
 # ============================================================
 
@@ -123,8 +169,10 @@ def graphe_visualiser():
     if not donnees_session['graphe']:
         return jsonify({'error': 'Aucune donnee chargee'}), 400
     
+    hd = request.args.get('hd', 'false').lower() == 'true'
     chemin = donnees_session['graphe'].visualiser(
-        donnees_session['solveur'].couleurs if donnees_session['solveur'] else None
+        donnees_session['solveur'].couleurs if donnees_session['solveur'] else None,
+        hd=hd
     )
     
     return send_file(chemin, mimetype='image/png')
@@ -277,6 +325,29 @@ def export_csv():
     )
 
 # ============================================================
+# API - Export PNG HD
+# ============================================================
+
+@app.route('/api/export/png-hd')
+def export_png_hd():
+    """Exporte le graphe en PNG haute definition"""
+    if not donnees_session['graphe']:
+        return jsonify({'error': 'Aucune donnee chargee'}), 400
+    
+    chemin = donnees_session['graphe'].visualiser(
+        donnees_session['solveur'].couleurs if donnees_session['solveur'] else None,
+        chemin_sortie='static/graphe_hd.png',
+        hd=True
+    )
+    
+    return send_file(
+        chemin,
+        mimetype='image/png',
+        as_attachment=True,
+        download_name='graphe_conflits_hd.png'
+    )
+
+# ============================================================
 # API - Informations UEs et Salles
 # ============================================================
 
@@ -310,6 +381,23 @@ def liste_salles():
             'est_labo': s.est_labo
         })
     return jsonify(salles)
+
+# ============================================================
+# API - Conversion creneau -> horaire
+# ============================================================
+
+@app.route('/api/horaires')
+def liste_horaires():
+    """Retourne la liste des creneaux avec leurs horaires"""
+    if not donnees_session['solveur']:
+        return jsonify({'error': 'Coloration non effectuee'}), 400
+    
+    creneaux = sorted(set(donnees_session['solveur'].couleurs.values()))
+    horaires = {}
+    for c in creneaux:
+        horaires[c] = creneau_to_horaire(c)
+    
+    return jsonify(horaires)
 
 # ============================================================
 # Démarrage

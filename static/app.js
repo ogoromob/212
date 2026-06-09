@@ -1,6 +1,7 @@
 /**
  * Application Frontend - Planification d'Examens
  * Gere l'interaction avec l'API Flask
+ * Version complete avec interdictions, audit OK/KO, horaires
  */
 
 // ============================================================
@@ -10,20 +11,24 @@ let etat = {
     donneesChargees: false,
     grapheConstruit: false,
     colorationFaite: false,
-    planningGenere: false
+    planningGenere: false,
+    interdictions: []
 };
+
+let listeUEsCache = [];
+let listeSallesCache = [];
 
 // ============================================================
 // NAVIGATION
 // ============================================================
 function showTab(tabName) {
-    // Masquer tous les contenus
     document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
     document.querySelectorAll('.nav-tab').forEach(el => el.classList.remove('active'));
     
-    // Afficher le contenu selectionne
     document.getElementById('tab-' + tabName).classList.add('active');
-    event.target.classList.add('active');
+    if (event && event.target) {
+        event.target.classList.add('active');
+    }
 }
 
 // ============================================================
@@ -76,11 +81,9 @@ async function chargerDonneesParDefaut() {
             document.getElementById('info-donnees').style.display = 'block';
             document.getElementById('btn-construire-graphe').disabled = false;
             
-            // Afficher les stats
             afficherStatsDonnees(data.stats);
-            
-            // Charger les listes
-            chargerListes();
+            await chargerListes();
+            await chargerInterdictions();
             
             alert('Donnees chargees avec succes!');
         } else {
@@ -122,7 +125,8 @@ async function chargerFichiersUpload() {
             document.getElementById('btn-construire-graphe').disabled = false;
             
             afficherStatsDonnees(data.stats);
-            chargerListes();
+            await chargerListes();
+            await chargerInterdictions();
             
             alert('Fichiers importes avec succes!');
         } else {
@@ -149,10 +153,18 @@ function afficherStatsDonnees(stats) {
 
 async function chargerListes() {
     try {
-        // UEs
-        const respUE = await fetch('/api/ues');
-        const ues = await respUE.json();
+        const [respUE, respSalles] = await Promise.all([
+            fetch('/api/ues'),
+            fetch('/api/salles')
+        ]);
         
+        const ues = await respUE.json();
+        const salles = await respSalles.json();
+        
+        listeUEsCache = ues;
+        listeSallesCache = salles;
+        
+        // Afficher les UEs
         let htmlUE = '<table><thead><tr><th>Code</th><th>Nom</th><th>Effectif</th><th>Surveillant</th><th>Filiere</th></tr></thead><tbody>';
         ues.forEach(ue => {
             htmlUE += `<tr>
@@ -166,10 +178,7 @@ async function chargerListes() {
         htmlUE += '</tbody></table>';
         document.getElementById('liste-ues').innerHTML = htmlUE;
         
-        // Salles
-        const respSalles = await fetch('/api/salles');
-        const salles = await respSalles.json();
-        
+        // Afficher les salles
         let htmlSalles = '<table><thead><tr><th>Nom</th><th>Capacite</th><th>Labo</th></tr></thead><tbody>';
         salles.forEach(salle => {
             htmlSalles += `<tr>
@@ -181,8 +190,153 @@ async function chargerListes() {
         htmlSalles += '</tbody></table>';
         document.getElementById('liste-salles').innerHTML = htmlSalles;
         
+        // Mettre a jour les selects d'interdictions
+        mettreAJourSelectsInterdictions(ues);
+        
     } catch (error) {
         console.error('Erreur chargement listes:', error);
+    }
+}
+
+// ============================================================
+// INTERDICTIONS EXPLICITES
+// ============================================================
+function mettreAJourSelectsInterdictions(ues) {
+    const sel1 = document.getElementById('interdiction-ue1');
+    const sel2 = document.getElementById('interdiction-ue2');
+    
+    if (!sel1 || !sel2) return;
+    
+    const options = ues.map(ue => `<option value="${ue.code}">${ue.code} - ${ue.nom}</option>`).join('');
+    
+    sel1.innerHTML = '<option value="">UE 1</option>' + options;
+    sel2.innerHTML = '<option value="">UE 2</option>' + options;
+}
+
+async function chargerInterdictions() {
+    try {
+        const resp = await fetch('/api/interdictions');
+        const data = await resp.json();
+        etat.interdictions = data.interdictions || [];
+        afficherInterdictions();
+    } catch (error) {
+        console.error('Erreur chargement interdictions:', error);
+    }
+}
+
+async function ajouterInterdiction() {
+    const ue1 = document.getElementById('interdiction-ue1').value;
+    const ue2 = document.getElementById('interdiction-ue2').value;
+    
+    if (!ue1 || !ue2) {
+        alert('Veuillez selectionner deux UEs');
+        return;
+    }
+    if (ue1 === ue2) {
+        alert('Veuillez selectionner deux UEs differentes');
+        return;
+    }
+    
+    try {
+        const response = await fetch('/api/interdictions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'add', paire: [ue1, ue2] })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            etat.interdictions = data.interdictions;
+            afficherInterdictions();
+            
+            // Reconstruire le graphe si deja construit
+            if (etat.grapheConstruit) {
+                await reconstruireGraphe();
+            }
+        }
+    } catch (error) {
+        alert('Erreur: ' + error.message);
+    }
+}
+
+async function clearInterdictions() {
+    if (!confirm('Effacer toutes les interdictions explicites ?')) return;
+    
+    try {
+        const response = await fetch('/api/interdictions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'clear' })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            etat.interdictions = [];
+            afficherInterdictions();
+            if (etat.grapheConstruit) {
+                await reconstruireGraphe();
+            }
+        }
+    } catch (error) {
+        alert('Erreur: ' + error.message);
+    }
+}
+
+async function supprimerInterdiction(ue1, ue2) {
+    try {
+        const response = await fetch('/api/interdictions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'remove', paire: [ue1, ue2] })
+        });
+        
+        const data = await response.json();
+        if (data.success) {
+            etat.interdictions = data.interdictions;
+            afficherInterdictions();
+            if (etat.grapheConstruit) {
+                await reconstruireGraphe();
+            }
+        }
+    } catch (error) {
+        alert('Erreur: ' + error.message);
+    }
+}
+
+function afficherInterdictions() {
+    const container = document.getElementById('liste-interdictions');
+    
+    if (etat.interdictions.length === 0) {
+        container.innerHTML = '<p><em>Aucune interdiction explicite definie.</em></p>';
+        return;
+    }
+    
+    let html = '<p><strong>Interdictions actives:</strong></p>';
+    etat.interdictions.forEach(paire => {
+        html += `<span class="interdiction-item">
+            ${paire[0]} <-> ${paire[1]}
+            <button onclick="supprimerInterdiction('${paire[0]}', '${paire[1]}')" 
+                    style="margin-left:5px;background:none;border:none;cursor:pointer;color:#721c24;font-weight:bold;">x</button>
+        </span>`;
+    });
+    container.innerHTML = html;
+}
+
+async function reconstruireGraphe() {
+    // Reconstruire le graphe avec les nouvelles interdictions
+    document.getElementById('loading-graphe').classList.add('active');
+    try {
+        const respStats = await fetch('/api/graphe/stats');
+        const stats = await respStats.json();
+        afficherStatsGraphe(stats);
+        
+        document.getElementById('img-graphe').src = '/api/graphe/visualiser?' + new Date().getTime();
+        await chargerMatriceAdj();
+        await chargerListeAdj();
+    } catch (error) {
+        console.error('Erreur reconstruction graphe:', error);
+    } finally {
+        document.getElementById('loading-graphe').classList.remove('active');
     }
 }
 
@@ -193,23 +347,15 @@ async function construireGraphe() {
     document.getElementById('loading-graphe').classList.add('active');
     
     try {
-        // Les donnees sont deja chargees, le graphe est construit cote serveur
-        // On recupere juste les stats et l'image
-        
-        // Stats
         const respStats = await fetch('/api/graphe/stats');
         const stats = await respStats.json();
         
         afficherStatsGraphe(stats);
         
-        // Image
         const imgGraphe = document.getElementById('img-graphe');
         imgGraphe.src = '/api/graphe/visualiser?' + new Date().getTime();
         
-        // Matrice
         await chargerMatriceAdj();
-        
-        // Liste adjacence
         await chargerListeAdj();
         
         etat.grapheConstruit = true;
@@ -217,7 +363,6 @@ async function construireGraphe() {
         
         document.getElementById('resultat-graphe').style.display = 'block';
         
-        // Activer les boutons de coloration
         document.getElementById('btn-welsh').disabled = false;
         document.getElementById('btn-dsatur').disabled = false;
         document.getElementById('btn-comparer').disabled = false;
@@ -327,13 +472,11 @@ async function lancerColoration(algorithme) {
             return;
         }
         
-        // Afficher les resultats
         afficherResultatColoration(data);
         
         etat.colorationFaite = true;
         updateStatus();
         
-        // Activer le bouton de planning
         document.getElementById('btn-generer-planning').disabled = false;
         
         // Rafraichir l'image du graphe colore
@@ -365,8 +508,8 @@ function afficherResultatColoration(data) {
         </div>
     `;
     
-    // Details des creneaux
-    let htmlDetails = '<h4>Repartition par Creneau</h4><table><thead><tr><th>Creneau</th><th>UEs</th><th>Nombre</th></tr></thead><tbody>';
+    // Details des creneaux avec horaires
+    let htmlDetails = '<h4>Repartition par Creneau</h4><table><thead><tr><th>Creneau</th><th>Horaire</th><th>UEs</th><th>Nombre</th></tr></thead><tbody>';
     
     const creneaux = {};
     for (const [code, creneau] of Object.entries(data.couleurs)) {
@@ -375,11 +518,33 @@ function afficherResultatColoration(data) {
     }
     
     for (const [creneau, ues] of Object.entries(creneaux)) {
-        htmlDetails += `<tr><td><strong>Creneau ${creneau}</strong></td><td>${ues.join(', ')}</td><td>${ues.length}</td></tr>`;
+        const horaire = creneauToHoraire(parseInt(creneau));
+        htmlDetails += `<tr>
+            <td><strong>Creneau ${creneau}</strong></td>
+            <td>${horaire}</td>
+            <td>${ues.join(', ')}</td>
+            <td>${ues.length}</td>
+        </tr>`;
     }
     htmlDetails += '</tbody></table>';
     
     document.getElementById('details-coloration').innerHTML = htmlDetails;
+}
+
+function creneauToHoraire(creneau) {
+    const jours = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi'];
+    const heures = ['07h30-09h30', '10h00-12h00', '14h00-16h00', '16h30-18h30'];
+    
+    if (creneau < 0) return 'Invalide';
+    const jourIndex = Math.floor(creneau / heures.length);
+    const heureIndex = creneau % heures.length;
+    
+    if (jourIndex >= jours.length) {
+        const semaine = 1 + Math.floor(creneau / (jours.length * heures.length));
+        const ji = jourIndex % jours.length;
+        return `Sem${semaine} ${jours[ji]} ${heures[heureIndex]}`;
+    }
+    return `${jours[jourIndex]} ${heures[heureIndex]}`;
 }
 
 async function comparerAlgorithmes() {
@@ -443,10 +608,7 @@ async function genererPlanning() {
             etat.planningGenere = true;
             updateStatus();
             
-            // Afficher le rapport d'audit
             afficherRapportAudit(data.rapport);
-            
-            // Afficher le tableau de planning
             afficherTableauPlanning(data.planning);
             
             document.getElementById('resultat-planning').style.display = 'block';
@@ -466,30 +628,69 @@ function afficherRapportAudit(rapport) {
     
     let html = '';
     
+    // Message global
     if (rapport.contraintes_respectees) {
         html += '<div class="alert alert-success"><strong>&#10004; Toutes les contraintes obligatoires sont respectees!</strong></div>';
     } else {
         html += '<div class="alert alert-danger"><strong>&#10008; Certaines contraintes ne sont pas respectees!</strong></div>';
     }
     
-    if (rapport.erreurs.length > 0) {
-        html += '<h4>Erreurs (' + rapport.erreurs.length + ')</h4><ul>';
+    // Details par contrainte avec badges OK/KO
+    if (rapport.details) {
+        html += '<h4>Verification detaillee des contraintes</h4>';
+        html += '<div style="margin: 15px 0;">';
+        
+        for (const [key, detail] of Object.entries(rapport.details)) {
+            const statusClass = detail.status === 'OK' ? 'audit-ok' : 
+                               (detail.status === 'KO' ? 'audit-ko' : 'audit-warning');
+            const badgeClass = detail.status === 'OK' ? 'badge-ok' : 
+                               (detail.status === 'KO' ? 'badge-ko' : 'badge-warning');
+            
+            html += `<div class="audit-item ${statusClass}">
+                <span class="audit-badge ${badgeClass}">${detail.status}</span>
+                <div>
+                    <strong>${detail.label}</strong><br>
+                    <small style="opacity:0.8">${detail.description}</small>
+                    ${detail.count > 0 && detail.status !== 'OK' ? `<br><small style="color:#721c24">Problemes: ${detail.count}</small>` : ''}
+                </div>
+            </div>`;
+        }
+        html += '</div>';
+    }
+    
+    // Erreurs et avertissements legacy
+    if (rapport.erreurs && rapport.erreurs.length > 0) {
+        html += '<h4>Erreurs detaillees (' + rapport.erreurs.length + ')</h4><ul>';
         rapport.erreurs.forEach(err => html += `<li style="color: #721c24;">${err}</li>`);
         html += '</ul>';
     }
     
-    if (rapport.avertissements.length > 0) {
+    if (rapport.avertissements && rapport.avertissements.length > 0) {
         html += '<h4>Avertissements (' + rapport.avertissements.length + ')</h4><ul>';
         rapport.avertissements.forEach(warn => html += `<li style="color: #856404;">${warn}</li>`);
         html += '</ul>';
     }
     
-    html += '<div class="stats-grid">';
-    html += `<div class="stat-card"><div class="stat-value">${rapport.stats.total_ues}</div><div class="stat-label">Total UEs</div></div>`;
-    html += `<div class="stat-card"><div class="stat-value">${rapport.stats.ues_affectees}</div><div class="stat-label">UEs Affectees</div></div>`;
-    html += `<div class="stat-card"><div class="stat-value">${rapport.stats.nb_creneaux}</div><div class="stat-label">Creneaux</div></div>`;
-    html += `<div class="stat-card"><div class="stat-value">${rapport.stats.nb_erreurs}</div><div class="stat-label">Erreurs</div></div>`;
-    html += '</div>';
+    // Statistiques
+    if (rapport.stats) {
+        html += '<div class="stats-grid">';
+        html += `<div class="stat-card"><div class="stat-value">${rapport.stats.total_ues}</div><div class="stat-label">Total UEs</div></div>`;
+        html += `<div class="stat-card"><div class="stat-value">${rapport.stats.ues_affectees}</div><div class="stat-label">UEs Affectees</div></div>`;
+        html += `<div class="stat-card"><div class="stat-value">${rapport.stats.nb_creneaux}</div><div class="stat-label">Creneaux</div></div>`;
+        html += `<div class="stat-card"><div class="stat-value">${rapport.stats.nb_erreurs || 0}</div><div class="stat-label">Erreurs</div></div>`;
+        html += `<div class="stat-card"><div class="stat-value">${rapport.stats.nb_avertissements || 0}</div><div class="stat-label">Avertissements</div></div>`;
+        html += '</div>';
+        
+        // Equilibre de charge
+        if (rapport.stats.equilibre) {
+            html += '<h4>Repartition par creneau</h4><table><thead><tr><th>Creneau</th><th>Horaire</th><th>NB Examens</th></tr></thead><tbody>';
+            for (const [creneau, count] of Object.entries(rapport.stats.equilibre)) {
+                const horaire = creneauToHoraire(parseInt(creneau));
+                html += `<tr><td>Creneau ${creneau}</td><td>${horaire}</td><td>${count}</td></tr>`;
+            }
+            html += '</tbody></table>';
+        }
+    }
     
     container.innerHTML = html;
 }
@@ -505,8 +706,8 @@ function afficherTableauPlanning(planning) {
         parCreneau[item.creneau].push(item);
     });
     
-    // En-tete
-    thead.innerHTML = '<tr><th>Creneau</th><th>Salle</th><th>Code UE</th><th>Nom UE</th><th>Filiere</th><th>Effectif</th><th>Surveillant</th></tr>';
+    // En-tete avec horaire
+    thead.innerHTML = '<tr><th>Creneau</th><th>Horaire</th><th>Salle</th><th>Code UE</th><th>Nom UE</th><th>Filiere</th><th>Effectif</th><th>Surveillant</th></tr>';
     
     // Corps
     let html = '';
@@ -514,6 +715,7 @@ function afficherTableauPlanning(planning) {
         items.forEach((item, index) => {
             html += `<tr>
                 ${index === 0 ? `<td rowspan="${items.length}"><strong>Creneau ${creneau}</strong></td>` : ''}
+                ${index === 0 ? `<td rowspan="${items.length}">${item.horaire || creneauToHoraire(parseInt(creneau))}</td>` : ''}
                 <td>${item.salle}</td>
                 <td>${item.code_ue}</td>
                 <td>${item.nom_ue}</td>
@@ -530,7 +732,6 @@ function afficherTableauPlanning(planning) {
 // INITIALISATION
 // ============================================================
 document.addEventListener('DOMContentLoaded', function() {
-    // Verifier l'etat initial
     fetch('/api/etat')
         .then(r => r.json())
         .then(data => {
@@ -538,6 +739,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 etat.donneesChargees = true;
                 document.getElementById('btn-construire-graphe').disabled = false;
                 chargerListes();
+                chargerInterdictions();
             }
             updateStatus();
         });

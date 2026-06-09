@@ -83,6 +83,7 @@ class GrapheConflit:
         self.matrice_adj = [[0] * n for _ in range(n)]
         self.liste_adj = defaultdict(list)
         self.aretes = []
+        self.interdictions = interdictions or []
         
         # Index des codes pour la matrice
         index = {code: i for i, code in enumerate(codes)}
@@ -122,10 +123,11 @@ class GrapheConflit:
         return {
             'nb_sommets': n,
             'nb_aretes': len(self.aretes),
-            'degres': {code: len(self.liste_adj[code]) for code in codes}
+            'degres': {code: len(self.liste_adj[code]) for code in codes},
+            'interdictions': self.interdictions
         }
     
-    def visualiser(self, couleurs=None, chemin_sortie='static/graphe.png'):
+    def visualiser(self, couleurs=None, chemin_sortie='static/graphe.png', hd=True):
         """Visualise le graphe avec networkx et matplotlib"""
         G = nx.Graph()
         
@@ -150,26 +152,57 @@ class GrapheConflit:
         else:
             node_colors = ['skyblue'] * len(G.nodes())
         
-        # Dessiner le graphe
-        plt.figure(figsize=(14, 10))
-        pos = nx.spring_layout(G, k=2, iterations=50, seed=42)
+        # Dessiner le graphe en HD
+        dpi = 300 if hd else 150
+        figsize = (16, 12) if hd else (14, 10)
+        plt.figure(figsize=figsize, dpi=dpi)
+        pos = nx.spring_layout(G, k=2.5, iterations=100, seed=42)
         
-        nx.draw(G, pos, 
+        # Aretes avec distinction des interdictions explicites
+        aretes_normales = []
+        aretes_interdictions = []
+        if hasattr(self, 'interdictions') and self.interdictions:
+            for code1, code2 in self.aretes:
+                est_interdiction = False
+                for interdit in self.interdictions:
+                    if (code1 == interdit[0] and code2 == interdit[1]) or \
+                       (code1 == interdit[1] and code2 == interdit[0]):
+                        est_interdiction = True
+                        break
+                if est_interdiction:
+                    aretes_interdictions.append((code1, code2))
+                else:
+                    aretes_normales.append((code1, code2))
+        else:
+            aretes_normales = self.aretes
+        
+        # Dessiner aretes normales
+        if aretes_normales:
+            nx.draw_networkx_edges(G, pos, edgelist=aretes_normales,
+                                   edge_color='gray', width=1.0, alpha=0.6)
+        
+        # Dessiner aretes d'interdiction en rouge
+        if aretes_interdictions:
+            nx.draw_networkx_edges(G, pos, edgelist=aretes_interdictions,
+                                   edge_color='red', width=2.5, alpha=0.8,
+                                   style='dashed')
+        
+        nx.draw_networkx_nodes(G, pos, 
                 node_color=node_colors,
-                node_size=800,
-                with_labels=True,
-                font_size=8,
-                font_weight='bold',
-                edge_color='gray',
-                width=1.0,
+                node_size=1200 if hd else 800,
                 alpha=0.9)
         
-        plt.title("Graphe de Conflits des UEs\n(Deux UEs reliees ne peuvent pas etre au meme creneau)", 
+        nx.draw_networkx_labels(G, pos,
+                font_size=10 if hd else 8,
+                font_weight='bold')
+        
+        plt.title("Graphe de Conflits des UEs\n(Deux UEs reliees ne peuvent pas etre au meme creneau)\nAretes rouges = Interdictions explicites", 
                   fontsize=14, fontweight='bold')
+        plt.axis('off')
         plt.tight_layout()
         
         os.makedirs(os.path.dirname(chemin_sortie) if os.path.dirname(chemin_sortie) else '.', exist_ok=True)
-        plt.savefig(chemin_sortie, dpi=150, bbox_inches='tight')
+        plt.savefig(chemin_sortie, dpi=dpi, bbox_inches='tight', pad_inches=0.2)
         plt.close()
         
         return chemin_sortie

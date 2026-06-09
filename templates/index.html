@@ -84,6 +84,7 @@
         .btn-success { background: #28a745; color: white; }
         .btn-warning { background: #ffc107; color: #212529; }
         .btn-info { background: #17a2b8; color: white; }
+        .btn-danger { background: #dc3545; color: white; }
         .btn:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
         .btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
         
@@ -219,6 +220,40 @@
         }
         .status-dot.ready { background: #28a745; }
         
+        /* Audit styles */
+        .audit-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 15px;
+            margin: 5px 0;
+            border-radius: 8px;
+            font-weight: 500;
+        }
+        .audit-ok { background: #d4edda; color: #155724; }
+        .audit-ko { background: #f8d7da; color: #721c24; }
+        .audit-warning { background: #fff3cd; color: #856404; }
+        .audit-badge {
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 0.8em;
+            font-weight: bold;
+            margin-right: 10px;
+        }
+        .badge-ok { background: #28a745; color: white; }
+        .badge-ko { background: #dc3545; color: white; }
+        .badge-warning { background: #ffc107; color: #212529; }
+        
+        /* Interdictions */
+        .interdiction-item {
+            display: inline-block;
+            background: #f8d7da;
+            color: #721c24;
+            padding: 5px 10px;
+            border-radius: 15px;
+            margin: 3px;
+            font-size: 0.9em;
+        }
+        
         @media (max-width: 768px) {
             .grid-2, .grid-3, .comparaison-result { grid-template-columns: 1fr; }
             .header h1 { font-size: 1.8em; }
@@ -307,6 +342,33 @@
                     </div>
                 </div>
                 
+                <!-- Interdictions explicites -->
+                <div class="card">
+                    <h3>Interdictions Explicites (Contrainte 2.2)</h3>
+                    <p>Ajoutez des paires d'UEs qui ne doivent pas avoir lieu le meme jour, independamment des etudiants.</p>
+                    
+                    <div style="margin: 15px 0;">
+                        <select id="interdiction-ue1" style="padding: 8px; border-radius: 5px; margin-right: 5px;">
+                            <option value="">UE 1</option>
+                        </select>
+                        <span>et</span>
+                        <select id="interdiction-ue2" style="padding: 8px; border-radius: 5px; margin: 0 5px;">
+                            <option value="">UE 2</option>
+                        </select>
+                        <button class="btn btn-danger" onclick="ajouterInterdiction()" style="padding: 8px 15px;">
+                            Ajouter l'interdiction
+                        </button>
+                    </div>
+                    
+                    <div id="liste-interdictions" style="margin-top: 10px;">
+                        <p><em>Aucune interdiction explicite definie.</em></p>
+                    </div>
+                    
+                    <button class="btn btn-warning" onclick="clearInterdictions()" style="margin-top: 10px;">
+                        Effacer toutes les interdictions
+                    </button>
+                </div>
+                
                 <div class="card" id="info-donnees" style="display:none;">
                     <h3>Informations sur les Donnees</h3>
                     <div class="stats-grid" id="stats-donnees"></div>
@@ -327,7 +389,7 @@
             <div id="tab-graphe" class="tab-content">
                 <div class="card">
                     <h3>Construction du Graphe de Conflits</h3>
-                    <p>Le graphe represente les conflits entre UEs (memes etudiants ou meme surveillant).</p>
+                    <p>Le graphe represente les conflits entre UEs (memes etudiants, meme surveillant ou interdictions explicites).</p>
                     <button class="btn btn-primary" onclick="construireGraphe()" id="btn-construire-graphe" disabled>
                         Construire / Visualiser le Graphe
                     </button>
@@ -376,7 +438,7 @@
                         <div class="card" style="text-align: center;">
                             <h4>Welsh-Powell</h4>
                             <p style="font-size: 0.9em; color: #6c757d;">
-                                Algorithme glouton statique. Trie par degre decroissant.
+                                Algorithme glouton statique. Trie par degre decroissant, puis par effectif.
                             </p>
                             <button class="btn btn-primary" onclick="lancerWelshPowell()" id="btn-welsh" disabled>
                                 Lancer Welsh-Powell
@@ -441,7 +503,7 @@
                 
                 <div id="resultat-planning" style="display:none;">
                     <div class="card">
-                        <h3>Rapport d'Audit</h3>
+                        <h3>Rapport d'Audit Complet</h3>
                         <div id="rapport-audit"></div>
                     </div>
                     
@@ -465,15 +527,15 @@
                     
                     <div class="grid-2">
                         <div class="card" style="text-align: center;">
-                            <h4>Image du Graphe</h4>
-                            <p>PNG - Visualisation du graphe coloré</p>
-                            <a id="lien-image" href="/api/graphe/visualiser" target="_blank" class="btn btn-info" style="text-decoration: none;">
-                                Telecharger l'Image
+                            <h4>Image du Graphe (HD)</h4>
+                            <p>PNG haute definition - Visualisation du graphe colore</p>
+                            <a id="lien-image" href="/api/export/png-hd" target="_blank" class="btn btn-info" style="text-decoration: none;">
+                                Telecharger PNG HD
                             </a>
                         </div>
                         <div class="card" style="text-align: center;">
                             <h4>Planning CSV</h4>
-                            <p>CSV - Tableau creneau x salle</p>
+                            <p>CSV - Tableau creneau x salle avec horaires</p>
                             <a id="lien-csv" href="/api/planning/export-csv" class="btn btn-success" style="text-decoration: none;">
                                 Telecharger le CSV
                             </a>
